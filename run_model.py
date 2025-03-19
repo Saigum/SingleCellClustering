@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import torch
 from torch_geometric.data import Data, DataLoader
-from model import scGAC, train
+from model import scGAC
 from data_utils import normalization, getGraph, load_data
 import torch as th
 import torch.nn as nn
@@ -14,7 +14,9 @@ import torch.nn.functional as F
 import scanpy as sc
 import scipy.sparse
 import matplotlib.pyplot as plt
+import warnings
 
+warnings.filterwarnings("ignore", message="reduction: 'mean' divides", category=UserWarning)
 
 def saveClusterResult(pred_labels, cell_names, dataset_name):
     """Save clustering results to a file."""
@@ -215,9 +217,10 @@ def train_and_evaluate(adata,subtype,args):
                 print(f"Relative Error = {relative_error:.4f}")
         
         pretraining_losses.append(loss.item())
-    plt.plot(pretraining_losses)
-    plt.savefig("../plots/pretraining_losses.png")
-    plt.close()
+    if(len(pretraining_losses)!=0):
+        plt.plot(pretraining_losses)
+        plt.savefig("plots/pretraining_losses.png")
+        plt.close()
     print("Starting deep clustering phase...")
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
@@ -249,7 +252,6 @@ def train_and_evaluate(adata,subtype,args):
         total_loss.backward()
         optimizer.step()
         
-        # Evaluate clustering
         if epoch % 10 == 0:
             model.eval()
             with torch.no_grad():
@@ -267,10 +269,10 @@ def train_and_evaluate(adata,subtype,args):
                     nmi_scores.append(normalized_mutual_info_score(true_labels, y_pred))
                     
     plt.plot(range(len(ari_scores)),ari_scores)
-    plt.savefig("../plots/ari_scores.png")
+    plt.savefig("plots/ari_scores.png")
     plt.close()
     plt.plot(range(len(nmi_scores)),nmi_scores)
-    plt.savefig("../plots/nmi_scores.png")
+    plt.savefig("plots/nmi_scores.png")
     plt.close()
     print(f"Best ARI: {max(ari_scores)}, Best NMI: {max(nmi_scores)}")
     print("Saving Best Clustering Results...")
@@ -279,13 +281,13 @@ def train_and_evaluate(adata,subtype,args):
     
     # Save final results
     plt.plot(range(len(total_losses)),total_losses)
-    plt.savefig("../plots/total_losses.png")
+    plt.savefig("plots/total_losses.png")
     plt.close()
     plt.plot(range(len(recon_losses)),recon_losses)
-    plt.savefig("../plots/recon_losses.png")
+    plt.savefig("plots/recon_losses.png")
     plt.close()
     plt.plot(range(len(cluster_losses)),cluster_losses)
-    plt.savefig("../plots/cluster_losses.png")
+    plt.savefig("plots/cluster_losses.png")
     plt.close()
     model.eval()
     with torch.no_grad():
@@ -304,13 +306,13 @@ def main(args):
 
     # Load Data
     print("Loading dataset from:", args.dataset)
-    adata,  = load_data(args.dataset)
+    adata,subtype  = load_data(args.dataset)
     if(args.dataset == "all"):
         datasets = ['guo', 'biase', 'brown', 'bjorklund', 'chung', 'habib', 'sun', 'pbmc']
-        for i,adatas,subtype in enumerate(adata):
-            train_and_evaluate(adatas,args) 
+        for i,adatas,subtypes in enumerate(adata):
+            train_and_evaluate(adatas,subtypes,args) 
     else:
-        train_and_evaluate(adata,args)
+        train_and_evaluate(adata,subtype,args)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

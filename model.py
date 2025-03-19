@@ -7,6 +7,7 @@ import torch_geometric as tg
 from torch_geometric.nn import GATv2Conv,GATConv
 from torch_geometric.data import Data, DataLoader
 from sklearn.cluster import KMeans
+import warnings
 import matplotlib.pyplot as plt
 
 ##########################################
@@ -119,48 +120,3 @@ class scGAC(nn.Module):
 ##########################################
 
 
-def train(model, criterion, optimizer, feautures, edge_index, epochs,lambda_recon=1.0,lambda_kl=0.5):
-    """
-    Train the model with a combined reconstruction and clustering loss.
-    Here we use a KL divergence loss for the clustering (DEC style)
-    and a reconstruction loss (e.g., MSE).
-    """
-    kl_div_loss_fn = nn.KLDivLoss(reduction='batchmean')
-    model.train()
-
-    recon_loss_history = []
-    kl_loss_history = []
-    print(f"Sanity Check: features {feautures.shape} , edge_index {edge_index.shape} ")
-    x=feautures
-    for epoch in range(epochs):
-        total_recon_loss = 0.0
-        total_kl_loss = 0.0
-        optimizer.zero_grad()
-        xhat, z, q, p = model(x, edge_index)
-        print(f"Sanity Check: xhat {xhat.shape} , z {z.shape} , q {q.shape} , p {p.shape} ")
-        print(q)
-        recon_loss = criterion(xhat, x)
-        kl_loss = kl_div_loss_fn(
-            th.log(q + 1e-10), p.detach())  # kl needs log probs
-        loss = lambda_recon*recon_loss + lambda_kl*kl_loss
-        loss.backward()
-        optimizer.step()
-
-        total_recon_loss += recon_loss.item()
-        total_kl_loss += kl_loss.item()
-
-        recon_loss_history.append(total_recon_loss)
-        kl_loss_history.append(total_kl_loss)
-        print(
-            f"Epoch {epoch + 1}/{epochs}: Recon Loss = {total_recon_loss:.4f}, KL Loss = {total_kl_loss:.4f}")
-
-    plt.figure()
-    plt.plot(recon_loss_history, label='Reconstruction Loss')
-    plt.plot(kl_loss_history, label='KL Loss')
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.title("Training Losses")
-    plt.show()
-
-    return model
