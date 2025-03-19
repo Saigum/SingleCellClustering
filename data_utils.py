@@ -225,8 +225,8 @@ def load_data(dataset_name):
                 'label': i
             })
             dfs.append(temp_df)
-        subtype_df = pd.concat(dfs, ignore_index=True)
-        print(subtype_df.head())
+        subtype = pd.concat(dfs, ignore_index=True)
+        print(subtype.head())
         adata = ad.concat(adata_list)
             
 
@@ -234,9 +234,11 @@ def load_data(dataset_name):
         adata = sc.read_10x_mtx("datasets/pbmc/pbmc6k_matrices", var_names='gene_symbols', cache=False)
 
     elif dataset_name.lower() == "romanov":
-        adata = pd.read_excel("/scratch/saigum/codebase/datasets/Romanov/GSE74672_expressed_mols_with_classes.xlsx")
+        romanov = pd.read_excel("/scratch/saigum/codebase/datasets/Romanov/GSE74672_expressed_mols_with_classes.xlsx")
         lb = LabelEncoder()
-        subtype = lb.fit_transform(romanov.iloc[0])
+        subtype = lb.fit_transform(romanov.iloc[0,1:])
+        adata = ad.AnnData(romanov.iloc[11:].T)
+        
 
     else:
         raise ValueError(f"Dataset {dataset_name} not found")
