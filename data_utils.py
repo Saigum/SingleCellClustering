@@ -6,6 +6,7 @@ import scanpy as sc
 import pandas as pd
 import anndata as ad
 import pickle as pk
+from sklearn.preprocessing import LabelEncoder
 
 
 
@@ -171,6 +172,9 @@ def load_data(dataset_name):
 
     elif dataset_name.lower() == 'guo':
         adata = sc.read_csv("datasets/Guo/GSE99254.tsv", delimiter="\t").T
+        subtype= pd.read_csv("Guo/subtype.ann",delimiter="\t")
+        lb = LabelEncoder()
+        subtype["label"]=lb.fit_transform(subtype["sampleType"]) 
 
     elif dataset_name.lower() == "biase":
         adata = sc.read_text("datasets/Biase/GSE57249_fpkm.txt", delimiter="\t")
@@ -213,10 +217,26 @@ def load_data(dataset_name):
         adata = habib.transpose()
 
     elif dataset_name.lower() == 'sun':
-        adata = pk.load(open("datasets/Sun/celltype_specific_counts.pkl", "rb"))
+        adata_list = pk.load(open("datasets/Sun/celltype_specific_counts.pkl", "rb"))
+        dfs = []
+        for i, adata in enumerate(adata_list):
+            temp_df = pd.DataFrame({
+                'barcode': adata.obs_names,
+                'label': i
+            })
+            dfs.append(temp_df)
+        subtype_df = pd.concat(dfs, ignore_index=True)
+        print(subtype_df.head())
+        adata = ad.concat(adata_list)
+            
 
     elif dataset_name.lower() == 'pbmc':
         adata = sc.read_10x_mtx("datasets/pbmc/pbmc6k_matrices", var_names='gene_symbols', cache=False)
+
+    elif dataset_name.lower() == "romanov":
+        adata = pd.read_excel("/scratch/saigum/codebase/datasets/Romanov/GSE74672_expressed_mols_with_classes.xlsx")
+        lb = LabelEncoder()
+        subtype = lb.fit_transform(romanov.iloc[0])
 
     else:
         raise ValueError(f"Dataset {dataset_name} not found")

@@ -203,11 +203,8 @@ def train_and_evaluate(adata,subtype,args):
     for epoch in range(args.pre_epochs):
         pre_optimizer.zero_grad()
         recon, z = model(features, edge_index)
-        # recon,z = model(features)
         loss = F.mse_loss(recon, features)
         loss.backward()
-        
-        # Print gradient statistics
         pre_optimizer.step()
         
         if epoch % 10 == 0:
@@ -221,7 +218,6 @@ def train_and_evaluate(adata,subtype,args):
     plt.plot(pretraining_losses)
     plt.savefig("../plots/pretraining_losses.png")
     plt.close()
-    # Deep clustering phase
     print("Starting deep clustering phase...")
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
@@ -262,7 +258,6 @@ def train_and_evaluate(adata,subtype,args):
                 q = soft_clustering(z.detach().numpy(),args.clusters)
                 q = torch.tensor(q, dtype=torch.float)
                 y_pred = torch.argmax(q, dim=1).cpu().numpy()
-                
                 if subtype is not None:
                     true_labels = subtype['label'].values
                     ari = adjusted_rand_score(true_labels, y_pred)
