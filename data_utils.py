@@ -159,18 +159,8 @@ def getGraph(features, L, K, method):
 
 def load_data(dataset_name):
     subtype = None
-    
-    if dataset_name.lower() == 'all':
-        # Define the list of available dataset names
-        datasets = ['guo', 'biase', 'brown', 'bjorklund', 'chung', 'habib', 'sun', 'pbmc']
-        adata_list = []
-        # Loop over each dataset name and load the corresponding data
-        for ds in datasets:
-            adata, subtype = load_data(ds)
-            adata_list.append((adata,subtype))
-        return adata_list, None
 
-    elif dataset_name.lower() == 'guo':
+    if dataset_name.lower() == 'guo':
         adata = sc.read_csv("datasets/Guo/GSE99254.tsv", delimiter="\t").T
         subtype= pd.read_csv("Guo/subtype.ann",delimiter="\t")
         lb = LabelEncoder()
@@ -215,6 +205,13 @@ def load_data(dataset_name):
     elif dataset_name.lower() == 'habib':
         habib = sc.read_csv("datasets/Habib/GSE104525_Mouse_Processed_GTEx_Data.DGE.UMI-Counts.txt", delimiter="\t")
         adata = habib.transpose()
+        cell_names = adata.obs_names.values
+        prefixes = cell_names.values.str.split("_").str[0]
+        subtype = pd.DataFrame({
+         "cell type": prefixes,
+         "label": lb.fit_transform(prefixes)
+        }, index=cell_names)
+            
 
     elif dataset_name.lower() == 'sun':
         adata_list = pk.load(open("datasets/Sun/celltype_specific_counts.pkl", "rb"))

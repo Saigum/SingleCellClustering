@@ -306,11 +306,11 @@ def main(args):
 
     # Load Data
     print("Loading dataset from:", args.dataset)
-    adata,subtype  = load_data(args.dataset)
     if(args.dataset == "all"):
         datasets = ['guo', 'biase', 'brown', 'bjorklund', 'chung', 'habib', 'sun', 'pbmc']
-        for i,adatas,subtypes in enumerate(adata):
-            train_and_evaluate(adatas,subtypes,args) 
+        for i,dataset_str in enumerate(datasets):
+            adata,subtype = load_data(dataset_str)
+            train_and_evaluate(adata,subtype,args)
     else:
         train_and_evaluate(adata,subtype,args)
 
