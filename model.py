@@ -1,4 +1,4 @@
-import torch as th
+import torch 
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -9,7 +9,8 @@ from torch_geometric.data import Data, DataLoader
 from sklearn.cluster import KMeans
 import warnings
 import matplotlib.pyplot as plt
-
+from torch import randn_like
+import pytorch_lightning as pl
 ##########################################
 #         MODEL COMPONENTS
 ##########################################
@@ -83,20 +84,20 @@ class Decoder(nn.Module):
 
 def softcluster_assignments(z, centroids):
     """
-    Compute soft assignments for each sample in z to the centroids.
+    Compute soft assignments for each sample in z to torche centroids.
     Here we use a Student's t–like kernel:
       q_ik = 1 / (1 + ||z_i - μ_k||)
-    and then normalize over clusters.
+    and torchen normalize over clusters.
     """
     # z: (N, latent_dim); centroids: (n_clusters, latent_dim)
     # z is of dim N x latent_dim
     # centroids is of dim n_clusters x latent_dim
     ## diff is n,1,latent_dim = 1,n_clusters,latent_dim
     ## norm is n,n_clusters
-    distances = th.norm(z[:, None, :] - centroids[None,
+    distances = torch.norm(z[:, None, :] - centroids[None,
                         :, :], dim=2)  # (N, n_clusters)
     q = 1.0 / (1.0 + distances)
-    q = q / th.sum(q, dim=1, keepdim=True)
+    q = q / torch.sum(q, dim=1, keepdim=True)
     return q
 
 
@@ -119,4 +120,127 @@ class scGAC(nn.Module):
 #         TRAINING FUNCTION
 ##########################################
 
+from torch_geometric import nn as gnn
+
+class DualGraphEncoder(nn.Module):
+    def __init__(self,
+                 n_cells:int,
+                 n_genes:int,
+                 timepoints:int,
+                 ):
+        super(DualGraphEncoder,self).__init__()
+        ## assuming torchey pass in n_cells,n_genes
+        self.cell_graph_encoder= nn.ModuleList(
+            [gnn.SAGEConv(in_channels=n_genes,out_channels=n_genes)]*timepoints)
+        self.gene_graph_encoder = nn.ModuleList(
+            [gnn.SAGEConv(in_channels=n_cells,out_channels=n_cells)]*timepoints)
+    def forward(self,x,cell_graph,gene_graph):
+        for i in range(len(self.cell_graph_encoder)):
+            x = self.cell_graph_encoder[i](x,cell_graph)
+        x=x.T
+        for i in range(len(self.gene_graph_encoder)):
+            x = self.gene_graph_encoder[i](x,gene_graph)
+        return x
+
+from torch.nn import functional
+class GraphAutoEncoder(nn.Module):
+    def __init__(self,
+                 input_dim:int,
+                 hidden_dims:list,
+                 ):
+        super(GraphAutoEncoder,self).__init__()
+        layers=[input_dim] + hidden_dims
+        self.encoder = nn.ModuleList([
+            gnn.GATv2Conv(layers[i],layers[i+1])
+            for i in range(len(layers)-1)
+        ])
+        self.decoder = nn.ModuleList([
+            gnn.GATv2Conv(layers[i],layers[i+1])
+            for i in range(len(layers)-1,-1,-1)
+        ])
+        self.mu = nn.Linear(hidden_dims[-1],hidden_dims[-1])
+        self.logvar = nn.Linear(hidden_dims[-1],hidden_dims[-1])
+    def reparametrize(self,mu,logvar):
+        sample = mu + 0.5*torch.exp(logvar)*randn_like(logvar)
+        return sample
+    def forward(self,x,edge_index,edge_feat):
+        reduced=x
+        for i in range(len(self.encoder)):
+            reduced = self.encoder[i](reduced,edge_index,edge_feat)
+        mu = self.mu(reduced)
+        logvar = self.logvar(reduced)
+        z = self.reparametrize(mu,logvar)
+        ## !TODO: Write KL Divergence Loss over here.
+        reconstructed = z
+        for i in range(len(self.decoder)):
+            reconstructed = self.decoder[i](reconstructed,edge_index,edge_feat)
+        return z,reconstructed
+
+class DualEncoder(nn.Module):
+    def __init__(self,
+                 n_cells:int,
+                 n_genes:int,
+                 timepoints:int,
+                 hidden_dims:list):
+        super(DualEncoder,self).__init__()
+        self.dge = DualGraphEncoder(n_cells,n_genes,timepoints)
+        self.cell_ae = GraphAutoEncoder(n_genes,hidden_dims)
+        self.gene_ae = GraphAutoEncoder(n_cells,hidden_dims)
+    def forward(self,
+                x,
+                cell_edge_index,
+                cell_edge_feat,
+                gene_edge_index,
+                gene_edge_feat):
+        impute = self.dge(x,cell_edge_index,gene_edge_index)
+        cell_embeddings,cell_reconstructed = self.cell_ae(impute,cell_edge_index,cell_edge_feat)
+        gene_embeddings,gene_reconstructed = self.gene_ae(impute,gene_edge_index,gene_edge_feat)
+        return cell_embeddings,cell_reconstructed,gene_embeddings,gene_reconstructed
+    
+import lightning as L
+
+
+
+class LightningDualEncoder(L.LightningModule):
+    def __init__(self,
+                 n_cells:int,
+                 n_genes:int,
+                 timepoints:int,
+                 hidden_dims:list,
+                 lr:int=0.001):
+        super(LightningDualEncoder,self).__init__()
+        self.dge = DualGraphEncoder(n_cells,n_genes,timepoints)
+        self.cell_ae = GraphAutoEncoder(n_genes,hidden_dims)
+        self.gene_ae = GraphAutoEncoder(n_cells,hidden_dims)
+        self.lr = lr
+
+    def forward(self,
+                x,
+                cell_edge_index,
+                cell_edge_feat,
+                gene_edge_index,
+                gene_edge_feat):
+        impute = self.dge(x,cell_edge_index,gene_edge_index)
+        cell_embeddings,cell_reconstructed = self.cell_ae(impute,cell_edge_index,cell_edge_feat)
+        gene_embeddings,gene_reconstructed = self.gene_ae(impute,gene_edge_index,gene_edge_feat)
+        return cell_embeddings,cell_reconstructed,gene_embeddings,gene_reconstructed
+
+    def training_step(self, batch, batch_idx):
+        x,cell_edge_index,cell_edge_feat,gene_edge_index,gene_edge_feat = batch
+        cell_embeddings,cell_reconstructed,gene_embeddings,gene_reconstructed= self(x,
+                cell_edge_index,
+                cell_edge_feat,
+                gene_edge_index,
+                gene_edge_feat
+        )
+
+        
+        
+
+        loss_dict={}
+        return loss_dict
+
+    def configure_optimizers(self):
+        return torch.optim.SGD(self.parameters(), lr=self.lr)
+    
 
